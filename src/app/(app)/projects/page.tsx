@@ -100,7 +100,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
       </div>
 
       {projects.length ? (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 min-[1900px]:grid-cols-5">
           {projects.map((p) => (
             <ProjectCard key={p.id} p={p} today={today} tz={tz} />
           ))}

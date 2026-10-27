@@ -128,7 +128,7 @@ export function SettingsView({ origin, user, people, prefs: initial, ai, khal, i
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5">
+    <div className="space-y-5">
       <div className="flex items-end justify-between">
         <h1 className="text-2xl font-semibold tracking-tight sm:text-[28px]">Settings</h1>
         {saved && <span className="text-xs font-medium text-accent-text">{saved} ✓</span>}
