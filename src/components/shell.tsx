@@ -76,7 +76,7 @@ export function Shell({ children, userName }: { children: ReactNode; userName: s
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 pt-5 pb-28 sm:px-6 lg:px-8 lg:pt-8 lg:pb-12">{children}</main>
+      <main className="w-full min-w-0 px-4 pt-5 pb-28 sm:px-6 lg:px-10 lg:pt-8 lg:pb-12 2xl:px-12">{children}</main>
 
       <nav className="safe-bottom fixed inset-x-0 bottom-0 z-20 grid grid-cols-5 border-t border-border bg-surface/95 backdrop-blur lg:hidden">
         {NAV.filter((n) => n.href !== "/ideas").map(({ href, label, icon: Icon }) => (

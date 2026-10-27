@@ -246,6 +246,18 @@ body {
   background: color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
+/* Wide screens: the whole rem scale steps up, so text and controls fill the room instead of floating in it. */
+@media (min-width: 1536px) {
+  html {
+    font-size: 106.25%;
+  }
+}
+@media (min-width: 1920px) {
+  html {
+    font-size: 112.5%;
+  }
+}
+
 html {
   scrollbar-color: var(--border-strong) transparent;
 }

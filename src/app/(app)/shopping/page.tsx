@@ -24,9 +24,9 @@ export default async function ShoppingPage() {
   const spent = all.filter((b) => b.status === "bought" && openIds.has(b.projectId) && b.currency === currency).reduce((n, b) => n + (b.unitCents ?? 0) * b.quantity, 0);
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div>
       <PageHeader title="Shopping" subtitle="Everything still to buy, across open projects. Tick as you go." />
-      <div className="mb-6 grid grid-cols-3 gap-3">
+      <div className="mb-6 grid grid-cols-3 gap-3 xl:max-w-4xl">
         <Stat label="Items" value={count} />
         <Stat label="Still to spend" value={money(left, currency)} />
         <Stat label="Spent so far" value={money(spent, currency)} />

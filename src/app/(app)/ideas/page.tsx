@@ -35,7 +35,7 @@ export default async function IdeasPage() {
   const taken = ideas.filter((i) => !fresh.includes(i));
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div>
       <PageHeader
         title="Ideas"
         subtitle="From your jinsen inbox. When one is worth doing, make it a project: its notes and research verdict come along, and the spec is written from them."
@@ -53,7 +53,7 @@ export default async function IdeasPage() {
           Every idea is either a project already or archived. Capture new ones in jinsen, or ask LeClanker.
         </Empty>
       )}
-      <ul className="space-y-3">
+      <ul className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
         {fresh.map((i) => (
           <li key={i.id}>
             <Card as="article" className="p-4 sm:p-5">
