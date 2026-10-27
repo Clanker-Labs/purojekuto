@@ -6,12 +6,12 @@ import { DateTime } from "luxon";
 import { ArrowLeft, CalendarClock, Clock, Flag, ListChecks, ShoppingCart, Sparkles, Activity as ActivityIcon } from "lucide-react";
 import { requireUser } from "@/server/session";
 import { getSettings } from "@/server/services/settings";
-import { listCategories, projectSummary, recentActivity } from "@/server/services/projects";
+import { listCategories, listPeople, projectSummary, recentActivity } from "@/server/services/projects";
 import { listMilestones, listPurchases, listTasks } from "@/server/services/items";
 import { listSessions } from "@/server/services/sessions";
 import { latestJob, latestSpec, listSpecVersions } from "@/server/services/specs";
 import { aiStatus } from "@/server/ai/providers";
-import { khalConfigured, khalPublicUrl } from "@/server/integrations/khal";
+import { khalConfigured, khalIdentity, khalPublicUrl } from "@/server/integrations/khal";
 import { CategoryChip, Progress, StatusPill } from "@/components/bits";
 import { ProjectActions } from "@/components/project/actions";
 import { SpecPanel } from "@/components/project/spec-panel";
@@ -19,6 +19,7 @@ import { Milestones } from "@/components/project/milestones";
 import { Board } from "@/components/project/board";
 import { Purchases } from "@/components/project/purchases";
 import { Sessions } from "@/components/project/sessions";
+import { ProjectPeople } from "@/components/project/people";
 import { duration, money, relativeDay, shortDate } from "@/lib/format";
 import { describeActivity } from "@/lib/activity";
 import { todayIn } from "@/lib/time";
@@ -88,11 +89,14 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
               {p.priority === 3 && <span className="text-xs font-semibold text-critical-text">High priority</span>}
               {p.priority === 1 && <span className="text-xs text-muted">Low priority</span>}
               {p.sourceRef?.startsWith("jinsen-ideas:") && <span className="text-xs text-muted">· from idea #{p.sourceRef.split(":")[1]}</span>}
+              <span className="ml-1">
+                <ProjectPeople projectId={p.id} title={p.title} people={p.people} everyone={listPeople()} me={user.id} />
+              </span>
             </div>
           </div>
           <ProjectActions
-            project={{ id: p.id, title: p.title, status: p.status, pinned: p.pinned }}
-            categories={listCategories(user.id).map((c) => ({ id: c.id, name: c.name, emoji: c.emoji }))}
+            project={{ id: p.id, title: p.title, status: p.status, pinned: p.pinned, isOwner: p.userId === user.id }}
+            categories={listCategories(p.userId).map((c) => ({ id: c.id, name: c.name, emoji: c.emoji }))}
             form={{
               title: p.title,
               emoji: p.emoji ?? "",
@@ -188,8 +192,10 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
       {tab === "board" && (
         <Board
           projectId={id}
-          tasks={tasks.map((t) => ({ id: t.id, title: t.title, notes: t.notes, status: t.status, milestoneId: t.milestoneId, dueDate: t.dueDate }))}
+          tasks={tasks.map((t) => ({ id: t.id, title: t.title, notes: t.notes, status: t.status, milestoneId: t.milestoneId, assigneeId: t.assigneeId, dueDate: t.dueDate }))}
           milestones={milestones.map((m) => ({ id: m.id, title: m.title }))}
+          people={p.people.map((x) => ({ id: x.id, name: x.name }))}
+          me={user.id}
           today={today}
         />
       )}
@@ -208,9 +214,13 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
           projectId={id}
           tz={tz}
           defaultMinutes={s.sessionMinutes}
-          khal={{ connected: khalConfigured() && s.khalSync, url: khalPublicUrl() }}
+          khal={{
+            connected: khalConfigured() && s.khalSync && khalIdentity(user.id) != null,
+            url: khalPublicUrl(),
+            reason: khalConfigured() && !khalIdentity(user.id) ? "Your khal account isn't linked yet (the owner links it in Settings → People)" : null,
+          }}
           suggestion={spec ? `${spec.content.sessions.count} sessions of ${duration(spec.content.sessions.minutes)}, ${spec.content.sessions.cadence}` : null}
-          sessions={sessions.map((x) => ({ id: x.id, title: x.title, start: x.start, end: x.end, notes: x.notes, status: x.status, inKhal: !!x.khalEventId, khalError: x.khalError }))}
+          sessions={sessions.map((x) => ({ id: x.id, title: x.title, start: x.start, end: x.end, notes: x.notes, status: x.status, inKhal: !!x.khalEventId, khalError: x.khalError, by: x.by }))}
         />
       )}
 
@@ -220,7 +230,10 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
             {recentActivity(user.id, { projectId: id, limit: 100 }).map((a) => (
               <li key={a.id} className="relative">
                 <span className="absolute top-1.5 -left-[25px] h-2.5 w-2.5 rounded-full border-2 border-surface bg-accent" aria-hidden />
-                <p className="text-sm">{describeActivity(a.kind, a.detail)}</p>
+                <p className="text-sm">
+                  {describeActivity(a.kind, a.detail)}
+                  {a.by && <span className="text-muted"> · {a.by}</span>}
+                </p>
                 <p className="text-xs text-muted">{DateTime.fromJSDate(a.at, { zone: tz }).toFormat("ccc d LLL yyyy, HH:mm")}</p>
               </li>
             ))}

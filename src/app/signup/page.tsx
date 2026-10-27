@@ -29,7 +29,7 @@ export default async function SignupPage({ searchParams }: { searchParams: Promi
     return (
       <AuthShell
         title="You're invited"
-        subtitle={`${ownerName()} invited you to their purojekuto. Your projects stay private to you. Sign-in is a passkey — Face ID, Touch ID or your phone.`}
+        subtitle={`${ownerName()} invited you to their purojekuto. Your projects stay private until you share them, and projects can be shared with you. Sign-in is a passkey — Face ID, Touch ID or your phone.`}
       >
         <PasskeySignUp invite={invite.code} suggestedName={invite.name ?? undefined} />
       </AuthShell>

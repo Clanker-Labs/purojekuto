@@ -5,7 +5,8 @@ import * as P from "@/server/services/projects";
 import * as I from "@/server/services/items";
 import * as S from "@/server/services/sessions";
 import * as Sp from "@/server/services/specs";
-import { analytics } from "@/server/services/analytics";
+import { analytics, planning } from "@/server/services/analytics";
+import { linkKhal, removePerson } from "@/server/services/people";
 import { callTool } from "@/server/agent/tools";
 import { SpecSchema, specToMarkdown, type Spec } from "@/lib/spec";
 import { projectHtml } from "@/server/export-html";
@@ -185,6 +186,90 @@ describe("sessions and khal", () => {
     await S.updateSession(uid, s.id, { status: "done" });
     expect(P.projectSummary(uid, p.id).minutesWorked).toBe(120);
     expect(analytics(uid).weekly.at(-1)!.minutes).toBe(120);
+  });
+});
+
+describe("sharing", () => {
+  it("lets members see and work on a shared project, but only the owner shares or deletes it", () => {
+    const p = P.createProject(uid, { title: "Garden shed", category: "Home & DIY" });
+    const sam = createUser("Sam").id;
+    expect(() => P.addMember(sam, p.id, sam)).toThrow(); // can't see it yet
+    P.addMember(uid, p.id, sam);
+    expect(P.listMembers(sam, p.id).map((x) => `${x.name}:${x.role}`)).toEqual(["Test:owner", "Sam:member"]);
+    expect(P.listProjects(sam, { sharedWithMe: true }).map((x) => x.title)).toEqual(["Garden shed"]);
+    expect(P.listProjects(uid, { sharedWithMe: true })).toHaveLength(0);
+
+    const t = I.addTask(sam, p.id, { title: "Level the base", assigneeId: sam });
+    I.addTask(uid, p.id, { title: "Buy felt", assigneeId: uid });
+    expect(I.listTasks(uid, p.id)).toHaveLength(2);
+    expect(I.myTasks(sam).map((x) => x.title)).toEqual(["Level the base"]);
+    const stranger = createUser("Stranger").id;
+    expect(() => I.addTask(uid, p.id, { title: "x", assigneeId: stranger })).toThrow(/people on the project/);
+    expect(() => I.updateTask(stranger, t.id, { status: "done" })).toThrow();
+
+    // Members file it under the owner's shelves, never their own.
+    P.updateProject(sam, p.id, { category: "Garden" });
+    expect(P.findCategory(uid, "Garden")?.id).toBe(P.getProject(uid, p.id).categoryId);
+
+    expect(() => P.addMember(sam, p.id, stranger)).toThrow(/owner/);
+    expect(() => P.deleteProject(sam, p.id)).toThrow(/owner/);
+
+    // Due tasks in planning: yours or nobody's.
+    I.updateTask(uid, t.id, { dueDate: "2026-11-02" });
+    expect(planning(uid, "2026-11-01", "2026-11-30").dueTasks).toHaveLength(0);
+    expect(planning(sam, "2026-11-01", "2026-11-30").dueTasks.map((x) => x.title)).toEqual(["Level the base"]);
+
+    P.removeMember(sam, p.id, sam); // leave
+    expect(() => P.getProject(sam, p.id)).toThrow();
+    expect(I.listTasks(uid, p.id).find((x) => x.id === t.id)?.assigneeId).toBeNull();
+  });
+
+  it("keeps what a removed person added to someone else's project", () => {
+    const p = P.createProject(uid, { title: "Shed" });
+    const sam = createUser("Sam").id;
+    P.addMember(uid, p.id, sam);
+    I.addTask(sam, p.id, { title: "Sam's task" });
+    const own = P.createProject(sam, { title: "Sam's own" });
+    expect(() => removePerson(sam, uid)).toThrow(/owner/);
+    removePerson(uid, sam);
+    expect(I.listTasks(uid, p.id).map((x) => x.title)).toEqual(["Sam's task"]);
+    expect(() => P.getProject(uid, own.id)).toThrow();
+  });
+
+  it("writes each person's sessions into their own khal calendar, milestones into the owner's", async () => {
+    process.env.PUROJEKUTO_KHAL_URL = "http://khal.test";
+    process.env.PUROJEKUTO_KHAL_TOKEN = "t";
+    const calls: { tool: string; as: string | null }[] = [];
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const tool = String(url).split("/").pop()!;
+      calls.push({ tool, as: new Headers(init?.headers).get("x-khal-user") });
+      const out =
+        tool === "list_calendars" ? { calendars: [] } : tool === "create_calendar" ? { id: "cal" } : tool === "create_event" ? { event: { id: "o", eventId: `ev-${calls.length}` } } : {};
+      return new Response(JSON.stringify(out), { status: 200 });
+    });
+    const p = P.createProject(uid, { title: "Shed" });
+    const sam = createUser("Sam").id;
+    P.addMember(uid, p.id, sam);
+
+    // Not linked yet: saved, nothing sent to khal for Sam.
+    const s1 = await S.scheduleSession(sam, p.id, { start: Date.UTC(2026, 10, 8, 9) });
+    expect(s1.khalEventId).toBeNull();
+    expect(calls).toHaveLength(0);
+    expect(() => linkKhal(sam, sam, "khal-sam")).toThrow(/owner/);
+
+    linkKhal(uid, sam, "khal-sam");
+    const s2 = await S.scheduleSession(sam, p.id, { start: Date.UTC(2026, 10, 9, 9) });
+    expect(s2.khalEventId).toBeTruthy();
+    expect(calls.every((c) => c.as === "khal-sam")).toBe(true);
+
+    calls.length = 0;
+    const m = I.addMilestone(sam, p.id, { title: "Roof on", dueDate: "2026-11-20" });
+    await S.mirrorMilestone(sam, m.id);
+    expect(calls.find((c) => c.tool === "create_event")?.as).toBeNull(); // the owner = khal's default user
+
+    await expect(S.updateSession(uid, s2.id, { notes: "x" })).rejects.toThrow(/someone else/);
+    expect(S.listSessions(uid, { projectId: p.id }).map((x) => x.by)).toEqual(["Sam", "Sam"]);
+    fetchMock.mockRestore();
   });
 });
 

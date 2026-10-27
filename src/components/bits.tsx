@@ -2,7 +2,7 @@ import clsx from "clsx";
 import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 import type { ProjectStatus } from "@/server/db/schema";
-import { statusLabel } from "@/lib/projects";
+import { CATEGORY_COLORS, statusLabel } from "@/lib/projects";
 
 /** Presentational pieces shared by server and client components (no hooks). */
 
@@ -98,5 +98,42 @@ export function LinkButton({ href, children, variant = "secondary", className }:
     >
       {children}
     </Link>
+  );
+}
+
+function personColor(id: string): string {
+  let h = 0;
+  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return CATEGORY_COLORS[h % CATEGORY_COLORS.length];
+}
+
+export function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return ((parts[0]?.[0] ?? "?") + (parts.length > 1 ? parts.at(-1)![0] : "")).toUpperCase();
+}
+
+/** A person as a tinted circle with their initials; the colour is stable per person. */
+export function Avatar({ person, size = 22, className }: { person: { id: string; name: string }; size?: number; className?: string }) {
+  return (
+    <span
+      className={clsx("tint inline-grid shrink-0 place-items-center rounded-full font-semibold ring-2 ring-surface", className)}
+      style={{ "--c": personColor(person.id), width: size, height: size, fontSize: Math.round(size * 0.42) } as CSSProperties}
+      title={person.name}
+      aria-label={person.name}
+    >
+      {initials(person.name)}
+    </span>
+  );
+}
+
+export function AvatarStack({ people, max = 4, size = 22 }: { people: { id: string; name: string }[]; max?: number; size?: number }) {
+  const shown = people.slice(0, max);
+  return (
+    <span className="inline-flex items-center -space-x-1.5" aria-label={people.map((p) => p.name).join(", ")}>
+      {shown.map((p) => (
+        <Avatar key={p.id} person={p} size={size} />
+      ))}
+      {people.length > max && <span className="pl-2.5 text-[11px] text-muted">+{people.length - max}</span>}
+    </span>
   );
 }

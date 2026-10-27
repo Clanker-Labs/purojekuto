@@ -3,7 +3,7 @@ import type { CSSProperties } from "react";
 import { CalendarClock, Flag, Loader2, ShoppingCart } from "lucide-react";
 import type { ProjectSummary } from "@/server/services/projects";
 import { relativeDay, shortDate } from "@/lib/format";
-import { CategoryChip, Progress, StatusPill } from "./bits";
+import { AvatarStack, CategoryChip, Progress, StatusPill } from "./bits";
 
 export function ProjectCard({ p, today, tz }: { p: ProjectSummary; today: string; tz: string }) {
   const color = p.category?.color;
@@ -22,6 +22,11 @@ export function ProjectCard({ p, today, tz }: { p: ProjectSummary; today: string
           <div className="flex items-center gap-2">
             <h3 className="truncate font-semibold group-hover:text-accent-text">{p.title}</h3>
             {p.pinned && <span className="text-xs text-muted" aria-label="Pinned">📌</span>}
+            {p.people.length > 1 && (
+              <span className="ml-auto shrink-0">
+                <AvatarStack people={p.people} size={20} max={3} />
+              </span>
+            )}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
             <StatusPill status={p.status} />

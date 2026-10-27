@@ -13,7 +13,7 @@ export function ProjectActions({
   categories,
   form,
 }: {
-  project: { id: string; title: string; status: ProjectStatus; pinned: boolean };
+  project: { id: string; title: string; status: ProjectStatus; pinned: boolean; isOwner: boolean };
   categories: { id: string; name: string; emoji: string }[];
   form: ProjectFormValues;
 }) {
@@ -71,16 +71,18 @@ export function ProjectActions({
               <a href={`/projects/${project.id}/export?format=md`} target="_blank" rel="noopener" className="flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-surface-2" role="menuitem">
                 <FileDown size={15} className="text-muted" /> Spec as Markdown
               </a>
-              <div className="my-1 border-t border-border" />
-              <MenuItem
-                danger
-                icon={<Trash2 size={15} />}
-                onClick={() => {
-                  if (confirm(`Delete “${project.title}” and everything in it? Marking it Dropped keeps the history.`)) start(() => deleteProjectAction(project.id));
-                }}
-              >
-                Delete project
-              </MenuItem>
+              {project.isOwner && <div className="my-1 border-t border-border" />}
+              {project.isOwner && (
+                <MenuItem
+                  danger
+                  icon={<Trash2 size={15} />}
+                  onClick={() => {
+                    if (confirm(`Delete “${project.title}” and everything in it, for everyone on it? Marking it Dropped keeps the history.`)) start(() => deleteProjectAction(project.id));
+                  }}
+                >
+                  Delete project
+                </MenuItem>
+              )}
             </div>
           </>
         )}

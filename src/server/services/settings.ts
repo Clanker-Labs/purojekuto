@@ -20,6 +20,12 @@ export interface Settings {
   khalSync: boolean;
   /** The khal calendar purojekuto writes to (created on first use). */
   khalCalendarId: string | null;
+  /**
+   * Which person in khal this account is, so sessions land in their own
+   * calendar. Null: khal's default user — right for the owner, and the
+   * reason members stay unlinked until the owner picks theirs (People).
+   */
+  khalUserId: string | null;
 }
 
 /** Server default timezone: PUROJEKUTO_TIMEZONE, then TZ, then UTC. */
@@ -42,6 +48,7 @@ export const DEFAULT_SETTINGS = (): Settings => ({
   sessionMinutes: 120,
   khalSync: true,
   khalCalendarId: null,
+  khalUserId: null,
 });
 
 export function getSettings(uid: string): Settings {

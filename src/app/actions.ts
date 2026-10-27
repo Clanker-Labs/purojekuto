@@ -8,6 +8,8 @@ import * as S from "@/server/services/sessions";
 import * as Sp from "@/server/services/specs";
 import { updateSettings, getSettings, type Settings } from "@/server/services/settings";
 import { renameUser } from "@/server/services/users";
+import { createInvite, revokeInvite } from "@/server/services/invites";
+import { linkKhal, removePerson } from "@/server/services/people";
 import { deletePasskey, renamePasskey } from "@/server/services/passkeys";
 import { projectFromIdea } from "@/server/agent/tools";
 import { generateObject } from "@/server/ai/providers";
@@ -65,7 +67,8 @@ export async function setStatusAction(id: string, status: ProjectStatus) {
 
 export async function deleteProjectAction(id: string) {
   const uid = await requireUid();
-  for (const s of S.listSessions(uid, { projectId: id })) await S.deleteSession(uid, s.id);
+  P.getOwnProject(uid, id);
+  await S.removeProjectFromKhal(uid, id);
   P.deleteProject(uid, id);
   revalidatePath("/");
   revalidatePath("/projects");
@@ -82,6 +85,25 @@ export async function fromIdeaAction(ideaId: number, category?: string) {
   }
   revalidatePath("/ideas");
   redirect(`/projects/${id}`);
+}
+
+// ── Sharing ──────────────────────────────────────────────────────────────
+
+export async function shareProjectAction(projectId: string, personId: string) {
+  return attempt((uid) => ({ people: P.addMember(uid, projectId, personId) }), projectPaths(projectId));
+}
+
+/** Remove someone from a project, or (your own id) leave it. */
+export async function unshareProjectAction(projectId: string, personId: string) {
+  const uid = await requireUid();
+  try {
+    P.removeMember(uid, projectId, personId);
+  } catch (e) {
+    return { ok: false as const, error: e instanceof Error ? e.message : String(e) };
+  }
+  for (const p of projectPaths(projectId)) revalidatePath(p);
+  if (personId === uid) redirect("/projects");
+  return { ok: true as const };
 }
 
 // ── Specs ────────────────────────────────────────────────────────────────
@@ -226,6 +248,28 @@ export async function passkeyAction(op: { rename?: { id: string; name: string };
     if (op.remove) deletePasskey(uid, op.remove);
     return {};
   }, ["/settings"]);
+}
+
+// ── People (owner) ───────────────────────────────────────────────────────
+
+/** A single-use sign-up link, valid a week. */
+export async function createInviteAction(name: string, origin: string) {
+  return attempt((uid) => {
+    const inv = createInvite(uid, name);
+    return { url: `${origin.replace(/\/+$/, "")}/signup?invite=${inv.code}`, expiresAt: inv.expiresAt.getTime() };
+  }, ["/settings"]);
+}
+
+export async function revokeInviteAction(code: string) {
+  return attempt((uid) => (revokeInvite(uid, code), {}), ["/settings"]);
+}
+
+export async function linkKhalAction(personId: string, khalUserId: string | null) {
+  return attempt((uid) => (linkKhal(uid, personId, khalUserId || null), {}), ["/settings"]);
+}
+
+export async function removePersonAction(personId: string) {
+  return attempt((uid) => (removePerson(uid, personId), {}), ["/settings", "/", "/projects"]);
 }
 
 /** A real round trip through the configured provider: the only proof the CLI is signed in. */

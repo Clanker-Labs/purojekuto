@@ -6,6 +6,7 @@ import * as S from "@/server/services/sessions";
 import * as Sp from "@/server/services/specs";
 import { analytics, planning } from "@/server/services/analytics";
 import { getSettings } from "@/server/services/settings";
+import { getUser } from "@/server/services/users";
 import { aiStatus } from "@/server/ai/providers";
 import { getIdea, ideaContext, ideasConfigured, listIdeas, tagIdeaAsProject } from "@/server/integrations/ideas";
 import { khalConfigured } from "@/server/integrations/khal";
@@ -42,11 +43,13 @@ const tzOf = (uid: string) => getSettings(uid).timezone;
 const projectRef = z.string().describe("Project id, or its title (exact, or a unique part of it)");
 const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "YYYY-MM-DD");
 
-function presentSummary(p: P.ProjectSummary, tz: string) {
+function presentSummary(p: P.ProjectSummary, tz: string, uid: string) {
   return {
     id: p.id,
     title: p.title,
     emoji: p.emoji,
+    owner: p.userId === uid ? undefined : p.people[0]?.name,
+    sharedWith: p.people.length > 1 ? p.people.slice(1).map((x) => x.name) : undefined,
     pitch: p.pitch || undefined,
     status: p.status,
     category: p.category?.name ?? null,
@@ -73,8 +76,9 @@ function projectDetail(uid: string, id: string) {
   const spec = Sp.latestSpec(uid, id);
   const job = Sp.latestJob(uid, id);
   const ms = I.listMilestones(uid, id);
+  const names = new Map(p.people.map((x) => [x.id, x.name]));
   return {
-    ...presentSummary(p, tz),
+    ...presentSummary(p, tz, uid),
     notes: p.notes || undefined,
     currency: p.currency,
     milestones: ms.map((m) => ({ id: m.id, title: m.title, dueDate: m.dueDate, done: !!m.doneAt })),
@@ -83,6 +87,7 @@ function projectDetail(uid: string, id: string) {
       title: t.title,
       status: t.status,
       milestone: ms.find((m) => m.id === t.milestoneId)?.title,
+      assignee: t.assigneeId ? (t.assigneeId === uid ? "you" : names.get(t.assigneeId)) : undefined,
       dueDate: t.dueDate ?? undefined,
     })),
     purchases: I.listPurchases(uid, id).map((b) => ({
@@ -100,6 +105,7 @@ function projectDetail(uid: string, id: string) {
       start: toZonedISO(s.start, tz),
       minutes: Math.round((s.end - s.start) / MINUTE),
       status: s.status,
+      by: s.by ?? undefined,
       inKhal: !!s.khalEventId,
       khalError: s.khalError ?? undefined,
     })),
@@ -146,6 +152,8 @@ export const TOOLS = [
         ai: { ready: ai.ready, provider: ai.provider, reason: ai.reason },
         khal: khalConfigured() && s.khalSync,
         ideas: ideasConfigured(),
+        you: getUser(userId)?.name,
+        people: P.listPeople().filter((x) => x.id !== userId).map((x) => x.name),
         categories: P.listCategories(userId).map((c) => `${c.emoji} ${c.name}`),
         active: P.listProjects(userId, { status: "active" }).map((p) => ({ id: p.id, title: p.title, progress: `${p.progress}%` })),
       };
@@ -156,18 +164,19 @@ export const TOOLS = [
     name: "list_projects",
     title: "List projects",
     description:
-      'Projects with status, progress, next milestone, spend and next working session. status: "open" (default: idea, planned, active, paused), "all", or one status. Filter by category name or a search text.',
+      'Projects the user owns or that were shared with them, with status, progress, next milestone, spend, next working session, and who else is on it. status: "open" (default: idea, planned, active, paused), "all", or one status. Filter by category name, a search text, or sharedWithMe.',
     input: z.object({
       status: z.enum(["open", "all", ...STATUS_IDS]).optional(),
       category: z.string().optional(),
       query: z.string().optional(),
+      sharedWithMe: z.boolean().optional().describe("Only projects someone else owns and shared with the user"),
     }),
     readOnly: true,
     run: (i, { userId }) => {
       const cat = i.category ? P.findCategory(userId, i.category) : undefined;
       if (i.category && !cat) throw new Error(`No category "${i.category}"`);
       const tz = tzOf(userId);
-      return P.listProjects(userId, { status: i.status ?? "open", categoryId: cat?.id, q: i.query }).map((p) => presentSummary(p, tz));
+      return P.listProjects(userId, { status: i.status ?? "open", categoryId: cat?.id, q: i.query, sharedWithMe: i.sharedWithMe }).map((p) => presentSummary(p, tz, userId));
     },
   }),
 
@@ -214,23 +223,60 @@ export const TOOLS = [
     run: (i, { userId }) => {
       const { project, ...patch } = i;
       const p = P.updateProject(userId, P.findProject(userId, project).id, patch);
-      return presentSummary(P.projectSummary(userId, p.id), tzOf(userId));
+      return presentSummary(P.projectSummary(userId, p.id), tzOf(userId), userId);
     },
   }),
 
   tool({
     name: "delete_project",
     title: "Delete a project",
-    description: "Delete a project and everything in it (tasks, purchases, sessions, specs). Prefer status 'dropped' or 'done'. Confirm with the person first.",
+    description: "Delete a project and everything in it (tasks, purchases, sessions, specs), for everyone it is shared with. Only its owner can. Prefer status 'dropped' or 'done'. Confirm with the person first.",
     input: z.object({ project: projectRef, confirm: z.literal(true) }),
     readOnly: false,
     destructive: true,
     run: async (i, { userId }) => {
-      const p = P.findProject(userId, i.project);
-      for (const s of S.listSessions(userId, { projectId: p.id })) await S.deleteSession(userId, s.id);
+      const p = P.getOwnProject(userId, P.findProject(userId, i.project).id);
+      await S.removeProjectFromKhal(userId, p.id);
       P.deleteProject(userId, p.id);
       return { deleted: p.title };
     },
+  }),
+
+  tool({
+    name: "list_people",
+    title: "List people",
+    description: "Everyone with an account on this purojekuto: who projects can be shared with and tasks given to.",
+    input: z.object({}),
+    readOnly: true,
+    run: (_i, { userId }) => P.listPeople().map((x) => ({ name: x.name, you: x.id === userId || undefined })),
+  }),
+
+  tool({
+    name: "share_project",
+    title: "Share a project",
+    description:
+      "Add a person (by name) to a project the user owns, so they see and edit it and can be given tasks; or remove: true to take them off it (their tasks become unassigned). Without a person, returns who is on it. People need an account here first (the owner invites them from Settings → People).",
+    input: z.object({ project: projectRef, person: z.string().optional(), remove: z.boolean().optional() }),
+    readOnly: false,
+    run: (i, { userId }) => {
+      const p = P.findProject(userId, i.project);
+      if (i.person) {
+        const who = P.findPerson(userId, i.person);
+        if (i.remove) P.removeMember(userId, p.id, who.id);
+        else P.addMember(userId, p.id, who.id);
+      }
+      return { project: p.title, people: P.listMembers(userId, p.id).map((x) => `${x.name}${x.role === "owner" ? " (owner)" : ""}`) };
+    },
+  }),
+
+  tool({
+    name: "my_tasks",
+    title: "My tasks",
+    description: "Open tasks given to the user across every project they are on, doing first. (Unassigned tasks are in get_project.)",
+    input: z.object({}),
+    readOnly: true,
+    run: (_i, { userId }) =>
+      I.myTasks(userId).map((t) => ({ id: t.id, project: t.projectTitle, title: t.title, status: t.status, dueDate: t.dueDate ?? undefined })),
   }),
 
   tool({
@@ -302,11 +348,12 @@ export const TOOLS = [
   tool({
     name: "add_task",
     title: "Add a task",
-    description: "Add a to-do to a project, optionally under a milestone (title or id) and with a due date.",
+    description: "Add a to-do to a project, optionally under a milestone (title or id), with a due date, and given to someone on the project (assignee: a name, or \"me\").",
     input: z.object({
       project: projectRef,
       title: z.string().min(1).max(200),
       milestone: z.string().optional(),
+      assignee: z.string().optional(),
       status: z.enum(["todo", "doing", "done"]).optional(),
       dueDate: dateStr.optional(),
       notes: z.string().max(5000).optional(),
@@ -316,17 +363,19 @@ export const TOOLS = [
       const p = P.findProject(userId, i.project);
       const ms = i.milestone ? I.listMilestones(userId, p.id).find((m) => m.id === i.milestone || m.title.toLowerCase() === i.milestone!.toLowerCase()) : undefined;
       if (i.milestone && !ms) throw new Error(`No milestone "${i.milestone}" in ${p.title}`);
-      const t = I.addTask(userId, p.id, { title: i.title, status: i.status, dueDate: i.dueDate, notes: i.notes, milestoneId: ms?.id });
-      return { id: t.id, title: t.title, status: t.status, project: p.title };
+      const assigneeId = i.assignee ? P.findPerson(userId, i.assignee).id : null;
+      const t = I.addTask(userId, p.id, { title: i.title, status: i.status, dueDate: i.dueDate, notes: i.notes, milestoneId: ms?.id, assigneeId });
+      return { id: t.id, title: t.title, status: t.status, project: p.title, assignee: i.assignee };
     },
   }),
 
   tool({
     name: "update_task",
     title: "Update a task",
-    description: "Move a task to todo / doing / done, rename it, change its due date or notes. Task ids come from get_project.",
+    description: "Move a task to todo / doing / done, rename it, change its due date or notes, or give it to someone (assignee: a name, \"me\", or null for anyone). Task ids come from get_project.",
     input: z.object({
       id: z.string(),
+      assignee: z.string().nullable().optional(),
       status: z.enum(["todo", "doing", "done"]).optional(),
       title: z.string().min(1).max(200).optional(),
       dueDate: dateStr.nullable().optional(),
@@ -334,8 +383,9 @@ export const TOOLS = [
     }),
     readOnly: false,
     run: (i, { userId }) => {
-      const { id, ...patch } = i;
-      const t = I.updateTask(userId, id, patch);
+      const { id, assignee, ...patch } = i;
+      const assigneeId = assignee === undefined ? undefined : assignee === null ? null : P.findPerson(userId, assignee).id;
+      const t = I.updateTask(userId, id, { ...patch, assigneeId });
       return { id: t.id, title: t.title, status: t.status };
     },
   }),
@@ -443,7 +493,7 @@ export const TOOLS = [
     name: "schedule_session",
     title: "Schedule a working session",
     description:
-      "Block time to work on a project. start is 'YYYY-MM-DDTHH:mm' in the user's timezone; give end or minutes (default: the user's session length). It is added to khal's Projects calendar when connected. Use khal's find_free_time first if you need a free slot.",
+      "Block the user's own time to work on a project. start is 'YYYY-MM-DDTHH:mm' in the user's timezone; give end or minutes (default: the user's session length). It is added to the user's own Projects calendar in khal when connected. Use khal's find_free_time first if you need a free slot.",
     input: z.object({
       project: projectRef,
       start: z.string(),

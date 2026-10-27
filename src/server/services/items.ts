@@ -1,14 +1,21 @@
-import { and, asc, eq, max, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, max, ne, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { db } from "@/server/db/client";
 import { milestones, purchases, tasks, projects, type Milestone, type Purchase, type PurchaseStatus, type Task, type TaskStatus } from "@/server/db/schema";
 import { isISODate } from "@/lib/time";
-import { getProject, logActivity } from "./projects";
+import { accessible, getProject, isOnProject, logActivity } from "./projects";
 
-/** Tasks, milestones and purchases: the lists inside a project. Every function is scoped to `uid`. */
+/**
+ * Tasks, milestones and purchases: the lists inside a project. Every function
+ * takes the acting person (`uid`) and checks they can see the project; the
+ * row's own `user_id` only records who added it.
+ */
 
-const touch = (uid: string, projectId: string) =>
-  db().update(projects).set({ updatedAt: new Date() }).where(and(eq(projects.id, projectId), eq(projects.userId, uid))).run();
+const touch = (projectId: string) => db().update(projects).set({ updatedAt: new Date() }).where(eq(projects.id, projectId)).run();
+
+function checkAssignee(projectId: string, assigneeId: string | null | undefined) {
+  if (assigneeId && !isOnProject(projectId, assigneeId)) throw new Error("Tasks can only be given to people on the project. Share it with them first.");
+}
 
 function checkDate(label: string, d: string | null | undefined) {
   if (d != null && d !== "" && !isISODate(d)) throw new Error(`${label} must be YYYY-MM-DD`);
@@ -17,18 +24,32 @@ function checkDate(label: string, d: string | null | undefined) {
 // ── Tasks ────────────────────────────────────────────────────────────────
 
 export function listTasks(uid: string, projectId: string): Task[] {
+  getProject(uid, projectId);
   return db()
     .select()
     .from(tasks)
-    .where(and(eq(tasks.userId, uid), eq(tasks.projectId, projectId)))
+    .where(eq(tasks.projectId, projectId))
     .orderBy(asc(tasks.sortOrder), asc(tasks.createdAt))
     .all();
 }
 
 function getTask(uid: string, id: string): Task {
-  const t = db().select().from(tasks).where(and(eq(tasks.id, id), eq(tasks.userId, uid))).get();
+  const t = db().select().from(tasks).where(eq(tasks.id, id)).get();
   if (!t) throw new Error(`No task ${id}`);
+  getProject(uid, t.projectId);
   return t;
+}
+
+/** Open tasks given to this person, across every project they're on (doing first). */
+export function myTasks(uid: string) {
+  return db()
+    .select({ t: tasks, title: projects.title, emoji: projects.emoji })
+    .from(tasks)
+    .innerJoin(projects, eq(projects.id, tasks.projectId))
+    .where(and(eq(tasks.assigneeId, uid), ne(tasks.status, "done"), accessible(uid), inArray(projects.status, ["idea", "planned", "active", "paused"])))
+    .orderBy(asc(tasks.status), asc(tasks.dueDate), asc(tasks.sortOrder))
+    .all()
+    .map((r) => ({ ...r.t, projectTitle: r.title, projectEmoji: r.emoji }));
 }
 
 function endOfColumn(projectId: string, status: TaskStatus): number {
@@ -41,6 +62,8 @@ export interface TaskInput {
   notes?: string;
   status?: TaskStatus;
   milestoneId?: string | null;
+  /** A person on the project, or null for anyone. */
+  assigneeId?: string | null;
   dueDate?: string | null;
   estimateMinutes?: number | null;
 }
@@ -50,6 +73,7 @@ export function addTask(uid: string, projectId: string, input: TaskInput): Task 
   const title = input.title.trim().slice(0, 200);
   if (!title) throw new Error("A task needs a title");
   checkDate("dueDate", input.dueDate);
+  checkAssignee(projectId, input.assigneeId);
   const status = input.status ?? "todo";
   const t = db()
     .insert(tasks)
@@ -61,6 +85,7 @@ export function addTask(uid: string, projectId: string, input: TaskInput): Task 
       notes: input.notes?.trim() ?? "",
       status,
       milestoneId: input.milestoneId ?? null,
+      assigneeId: input.assigneeId ?? null,
       dueDate: input.dueDate || null,
       estimateMinutes: input.estimateMinutes ?? null,
       sortOrder: endOfColumn(projectId, status),
@@ -68,7 +93,7 @@ export function addTask(uid: string, projectId: string, input: TaskInput): Task 
     })
     .returning()
     .get();
-  touch(uid, projectId);
+  touch(projectId);
   return t;
 }
 
@@ -79,6 +104,10 @@ export function updateTask(uid: string, id: string, patch: Partial<TaskInput> & 
   if (patch.title !== undefined) set.title = patch.title.trim().slice(0, 200) || before.title;
   if (patch.notes !== undefined) set.notes = patch.notes.trim();
   if (patch.milestoneId !== undefined) set.milestoneId = patch.milestoneId;
+  if (patch.assigneeId !== undefined) {
+    checkAssignee(before.projectId, patch.assigneeId);
+    set.assigneeId = patch.assigneeId;
+  }
   if (patch.dueDate !== undefined) set.dueDate = patch.dueDate || null;
   if (patch.estimateMinutes !== undefined) set.estimateMinutes = patch.estimateMinutes;
   if (patch.sortOrder !== undefined) set.sortOrder = patch.sortOrder;
@@ -90,7 +119,7 @@ export function updateTask(uid: string, id: string, patch: Partial<TaskInput> & 
   const t = db().update(tasks).set(set).where(eq(tasks.id, id)).returning().get();
   if (set.status === "done") logActivity(uid, before.projectId, "task_done", t.title);
   if (set.status === "doing" && before.status === "todo") autoStart(uid, before.projectId);
-  touch(uid, before.projectId);
+  touch(before.projectId);
   return t;
 }
 
@@ -116,23 +145,25 @@ export function moveTask(uid: string, id: string, status: TaskStatus, beforeId: 
 export function deleteTask(uid: string, id: string) {
   const t = getTask(uid, id);
   db().delete(tasks).where(eq(tasks.id, id)).run();
-  touch(uid, t.projectId);
+  touch(t.projectId);
 }
 
 // ── Milestones ───────────────────────────────────────────────────────────
 
 export function listMilestones(uid: string, projectId: string): Milestone[] {
+  getProject(uid, projectId);
   return db()
     .select()
     .from(milestones)
-    .where(and(eq(milestones.userId, uid), eq(milestones.projectId, projectId)))
+    .where(eq(milestones.projectId, projectId))
     .orderBy(asc(milestones.sortOrder), asc(milestones.dueDate))
     .all();
 }
 
 export function getMilestone(uid: string, id: string): Milestone {
-  const m = db().select().from(milestones).where(and(eq(milestones.id, id), eq(milestones.userId, uid))).get();
+  const m = db().select().from(milestones).where(eq(milestones.id, id)).get();
   if (!m) throw new Error(`No milestone ${id}`);
+  getProject(uid, m.projectId);
   return m;
 }
 
@@ -147,7 +178,7 @@ export function addMilestone(uid: string, projectId: string, input: { title: str
     .values({ id: randomUUID(), userId: uid, projectId, title, dueDate: input.dueDate || null, sortOrder: Number(n) })
     .returning()
     .get();
-  touch(uid, projectId);
+  touch(projectId);
   return m;
 }
 
@@ -161,30 +192,33 @@ export function updateMilestone(uid: string, id: string, patch: { title?: string
   if (patch.done !== undefined) set.doneAt = patch.done ? (before.doneAt ?? new Date()) : null;
   const m = db().update(milestones).set(set).where(eq(milestones.id, id)).returning().get();
   if (patch.done && !before.doneAt) logActivity(uid, before.projectId, "milestone_done", m.title);
-  touch(uid, before.projectId);
+  touch(before.projectId);
   return m;
 }
 
 export function deleteMilestone(uid: string, id: string) {
   const m = getMilestone(uid, id);
   db().delete(milestones).where(eq(milestones.id, id)).run();
-  touch(uid, m.projectId);
+  touch(m.projectId);
 }
 
 // ── Purchases ────────────────────────────────────────────────────────────
 
+/** One project's list, or (no project) everything in the projects this person can see. */
 export function listPurchases(uid: string, projectId?: string): Purchase[] {
+  if (projectId) getProject(uid, projectId);
   return db()
     .select()
     .from(purchases)
-    .where(and(eq(purchases.userId, uid), projectId ? eq(purchases.projectId, projectId) : undefined))
+    .where(projectId ? eq(purchases.projectId, projectId) : inArray(purchases.projectId, db().select({ id: projects.id }).from(projects).where(accessible(uid))))
     .orderBy(asc(purchases.sortOrder), asc(purchases.createdAt))
     .all();
 }
 
 function getPurchase(uid: string, id: string): Purchase {
-  const p = db().select().from(purchases).where(and(eq(purchases.id, id), eq(purchases.userId, uid))).get();
+  const p = db().select().from(purchases).where(eq(purchases.id, id)).get();
   if (!p) throw new Error(`No purchase ${id}`);
+  getProject(uid, p.projectId);
   return p;
 }
 
@@ -225,7 +259,7 @@ export function addPurchase(uid: string, projectId: string, input: PurchaseInput
     })
     .returning()
     .get();
-  touch(uid, projectId);
+  touch(projectId);
   return p;
 }
 
@@ -245,12 +279,12 @@ export function updatePurchase(uid: string, id: string, patch: Partial<PurchaseI
   }
   const p = db().update(purchases).set(set).where(eq(purchases.id, id)).returning().get();
   if (set.status === "bought") logActivity(uid, before.projectId, "purchase_bought", p.name, (p.unitCents ?? 0) * p.quantity);
-  touch(uid, before.projectId);
+  touch(before.projectId);
   return p;
 }
 
 export function deletePurchase(uid: string, id: string) {
   const p = getPurchase(uid, id);
   db().delete(purchases).where(eq(purchases.id, id)).run();
-  touch(uid, p.projectId);
+  touch(p.projectId);
 }

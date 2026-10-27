@@ -138,6 +138,27 @@ export const projects = sqliteTable(
   (t) => [index("projects_user").on(t.userId, t.status), index("projects_category").on(t.categoryId)],
 );
 
+/**
+ * People a project is shared with, besides its owner (`projects.user_id`).
+ * Members see and edit everything in it; only the owner shares, unshares or
+ * deletes it. Anyone with an account here can be added.
+ */
+export const projectMembers = sqliteTable(
+  "project_members",
+  {
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    addedAt: integer("added_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => [primaryKey({ columns: [t.projectId, t.userId] }), index("project_members_user").on(t.userId)],
+);
+
 export const milestones = sqliteTable(
   "milestones",
   {
@@ -168,6 +189,8 @@ export const tasks = sqliteTable(
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
     milestoneId: text("milestone_id").references(() => milestones.id, { onDelete: "set null" }),
+    /** Who does it, on a shared project (null = anyone). `user_id` is who created it. */
+    assigneeId: text("assignee_id").references(() => users.id, { onDelete: "set null" }),
     title: text("title").notNull(),
     notes: text("notes").notNull().default(""),
     status: text("status").$type<TaskStatus>().notNull().default("todo"),
@@ -179,7 +202,7 @@ export const tasks = sqliteTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [index("tasks_project").on(t.projectId, t.status)],
+  (t) => [index("tasks_project").on(t.projectId, t.status), index("tasks_assignee").on(t.assigneeId)],
 );
 
 export type PurchaseStatus = "needed" | "ordered" | "bought";
@@ -210,7 +233,7 @@ export const purchases = sqliteTable(
 
 export type SessionStatus = "planned" | "done" | "skipped";
 
-/** A block of time to work on a project; mirrored into khal's Projects calendar. */
+/** A block of one person's time on a project; mirrored into that person's Projects calendar in khal. */
 export const workSessions = sqliteTable(
   "work_sessions",
   {
@@ -286,6 +309,7 @@ export type ActivityKind =
   | "purchase_bought"
   | "session_done"
   | "spec"
+  | "member"
   | "note";
 
 /** What happened, when: feeds the timeline and the analytics. */

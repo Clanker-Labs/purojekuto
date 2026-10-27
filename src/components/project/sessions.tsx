@@ -18,6 +18,8 @@ interface S {
   status: SessionStatus;
   inKhal: boolean;
   khalError: string | null;
+  /** Someone else's (their name): shown, not editable. Null = yours. */
+  by: string | null;
 }
 
 const LENGTHS = [30, 45, 60, 90, 120, 180, 240, 360];
@@ -41,7 +43,7 @@ export function Sessions({
   sessions: S[];
   tz: string;
   defaultMinutes: number;
-  khal: { connected: boolean; url: string | null };
+  khal: { connected: boolean; url: string | null; reason?: string | null };
   suggestion: string | null;
 }) {
   const first = suggestStart(tz);
@@ -54,7 +56,8 @@ export function Sessions({
   const now = Date.now();
   const upcoming = sessions.filter((s) => s.status === "planned" && s.end > now);
   const past = sessions.filter((s) => !(s.status === "planned" && s.end > now)).reverse();
-  const workedMin = sessions.filter((s) => s.status === "done").reduce((n, s) => n + (s.end - s.start) / 60000, 0);
+  const mine = sessions.filter((s) => !s.by);
+  const workedMin = mine.filter((s) => s.status === "done").reduce((n, s) => n + (s.end - s.start) / 60000, 0);
   const fmt = (ms: number) => DateTime.fromMillis(ms, { zone: tz }).toFormat("ccc d LLL · HH:mm");
 
   const act = (fn: () => Promise<{ ok: boolean; error?: string; khalError?: string | null }>) =>
@@ -77,7 +80,10 @@ export function Sessions({
                     <span className="text-lg leading-none font-semibold">{DateTime.fromMillis(s.start, { zone: tz }).toFormat("d")}</span>
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{s.title}</p>
+                    <p className="truncate text-sm font-medium">
+                      {s.title}
+                      {s.by && <span className="font-normal text-muted"> · {s.by}</span>}
+                    </p>
                     <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted">
                       {DateTime.fromMillis(s.start, { zone: tz }).toFormat("HH:mm")}–{DateTime.fromMillis(s.end, { zone: tz }).toFormat("HH:mm")} · {duration((s.end - s.start) / 60000)}
                       {s.inKhal && !s.khalError && (
@@ -92,17 +98,21 @@ export function Sessions({
                       )}
                     </p>
                   </div>
-                  <Button size="sm" variant="ghost" onClick={() => act(() => updateSessionAction(projectId, s.id, { status: "done" }))} title="Mark done">
-                    <Check size={14} /> Done
-                  </Button>
-                  <button
-                    type="button"
-                    onClick={() => confirm("Remove this session (and its khal event)?") && act(() => deleteSessionAction(projectId, s.id))}
-                    className="rounded-lg p-1.5 text-muted opacity-0 group-hover:opacity-100 hover:text-critical-text focus:opacity-100"
-                    aria-label="Delete session"
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                  {!s.by && (
+                    <>
+                      <Button size="sm" variant="ghost" onClick={() => act(() => updateSessionAction(projectId, s.id, { status: "done" }))} title="Mark done">
+                        <Check size={14} /> Done
+                      </Button>
+                      <button
+                        type="button"
+                        onClick={() => confirm("Remove this session (and its khal event)?") && act(() => deleteSessionAction(projectId, s.id))}
+                        className="rounded-lg p-1.5 text-muted opacity-0 group-hover:opacity-100 hover:text-critical-text focus:opacity-100"
+                        aria-label="Delete session"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </>
+                  )}
                 </li>
               ))}
             </ul>
@@ -114,15 +124,18 @@ export function Sessions({
         {past.length > 0 && (
           <section>
             <h2 className="mb-2 text-xs font-semibold tracking-wide text-muted uppercase">
-              History <span className="font-normal normal-case">· {duration(workedMin)} worked</span>
+              History <span className="font-normal normal-case">· {duration(workedMin)} worked{mine.length < sessions.length ? " by you" : ""}</span>
             </h2>
             <ul className="divide-y divide-border rounded-2xl border border-border bg-surface shadow-card">
               {past.map((s) => (
                 <li key={s.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
                   <span className={clsx("h-2 w-2 shrink-0 rounded-full", s.status === "done" ? "bg-accent" : s.status === "skipped" ? "bg-border-strong" : "bg-warning")} aria-hidden />
-                  <span className="min-w-0 flex-1 truncate">{s.title}</span>
+                  <span className="min-w-0 flex-1 truncate">
+                    {s.title}
+                    {s.by && <span className="text-muted"> · {s.by}</span>}
+                  </span>
                   <span className="shrink-0 text-xs text-muted">{fmt(s.start)}</span>
-                  {s.status === "planned" ? (
+                  {s.status === "planned" && !s.by ? (
                     <span className="flex shrink-0 gap-1">
                       <Button size="sm" variant="ghost" onClick={() => act(() => updateSessionAction(projectId, s.id, { status: "done" }))} aria-label="It happened">
                         <Check size={13} />
@@ -132,7 +145,7 @@ export function Sessions({
                       </Button>
                     </span>
                   ) : (
-                    <span className="w-16 shrink-0 text-right text-xs text-muted">{s.status === "done" ? duration((s.end - s.start) / 60000) : "skipped"}</span>
+                    <span className="w-16 shrink-0 text-right text-xs text-muted">{s.status === "done" ? duration((s.end - s.start) / 60000) : s.status === "planned" ? "planned" : "skipped"}</span>
                   )}
                 </li>
               ))}
@@ -184,7 +197,7 @@ export function Sessions({
         <p className="mt-3 text-xs text-ink-2">
           {khal.connected ? (
             <>
-              Goes into your khal <b>Projects</b> calendar.{" "}
+              Goes into your own khal <b>Projects</b> calendar.{" "}
               {khal.url && (
                 <a href={khal.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-accent-text hover:underline">
                   Open khal <ExternalLink size={10} />
@@ -192,7 +205,7 @@ export function Sessions({
               )}
             </>
           ) : (
-            "khal isn't connected, so sessions stay here only."
+            `${khal.reason ?? "khal isn't connected"}, so your sessions stay here only.`
           )}
         </p>
         {msg && <p className={clsx("mt-3 text-sm", msg.bad ? "text-critical-text" : "text-ink-2")}>{msg.text}</p>}

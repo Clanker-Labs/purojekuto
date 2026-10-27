@@ -9,6 +9,7 @@
 - **Board.** To do, doing, done. Drag cards on a laptop; on a phone, tap the arrow. Picking up the first task starts the project.
 - **Shopping.** A list per project with prices, links and vendors, budget vs spent, and one list across every open project for the trip to the shop.
 - **Working sessions.** Block time for a project and it lands in your **khal** calendar, in its own "Projects" calendar. Dated milestones go there too. Mark sessions done and the hours count.
+- **People.** Invite someone (Settings → People) and share a project with them: they see and edit the plan, the board and the shopping list, tasks can be given to them, and their sessions go into *their* khal calendar. Everything else stays private.
 - **Browse and plan.** Shelves (categories) with counts, status filters, search; a 12-week timeline with milestones; the next two weeks day by day; active projects with nothing planned.
 - **Analytics.** Tasks done and hours worked per week, a six-month activity heatmap, projects by status and category, time by project, money vs budget, and what's overdue or stalled.
 - **From idea to project.** Ideas from your **jinsen-ideas** inbox (with their research verdict) become projects in one click; the idea is tagged `project` there.
