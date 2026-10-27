@@ -1,0 +1,33 @@
+# docker compose up -d   → purojekuto on :3000 (one container: web app, MCP and the AI spec queue).
+#
+# Two knobs, both for putting this on a real machine:
+#
+#   PUROJEKUTO_PORT   host port for the web app (default 3000)
+#   PUROJEKUTO_DATA   host path for the database; unset uses the named volume
+services:
+  web:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PUROJEKUTO_DB_PATH: /data/purojekuto.db
+    # Bound to LOOPBACK. Sign-in is passkey-only, tied to one hostname over
+    # https — put a tailnet, a tunnel or an authenticating proxy in front of it
+    # rather than publishing the port. Passkeys need https or localhost anyway.
+    ports:
+      - "127.0.0.1:${PUROJEKUTO_PORT:-3000}:3000"
+    # Set PUROJEKUTO_DATA to a host directory when something on the host backs it up:
+    # a named volume lives under /var/lib/docker, where an app-directory backup
+    # never looks.
+    volumes:
+      - ${PUROJEKUTO_DATA:-purojekuto-data}:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  purojekuto-data:
