@@ -1,0 +1,319 @@
+@import "tailwindcss";
+
+/*
+ * purojekuto design tokens — Clanker-Labs brand (Unchained palette: Chain Teal on
+ * Midnight Navy, Space Grotesk). Dark is the brand's home; a light theme is
+ * added because a board is read on a phone in daylight. The OS setting
+ * decides unless the user picked a theme (data-theme on <html>).
+ *
+ * Contrast on --surface (dark / light):
+ *   --text 14.6 / 18.9 · --text-2 8.1 / 9.6 · --muted 4.9 / 5.4
+ *   --accent-text 9.5 / 5.4 · --critical-text 5.6 / 5.0
+ *   --accent-ink on --accent (primary buttons) 9.9 in both
+ * Category and project colours are never text: chips are --text over a wash
+ * of the colour (--ev-wash), with a solid 3px bar, so any picked colour stays
+ * readable. Chart series are a separate ramp (--series-*), with no teal.
+ */
+:root {
+  color-scheme: dark;
+  --page: #0f1419;
+  --surface: #171d26;
+  --surface-2: #1e2631;
+  --inset: #0b0f13;
+  --border: #232b35;
+  --border-strong: #313b47;
+  --text: #e8edf2;
+  --text-2: #a8b3bf;
+  --muted: #8693a1;
+  --faint: #5a6673;
+  --grid: #1d242d;
+  --grid-strong: #262f3a;
+
+  --accent: #00d4aa;
+  --accent-ink: #0f1419;
+  --accent-text: #00d4aa;
+  --accent-soft: rgba(0, 212, 170, 0.1);
+  --critical: #e5484d;
+  --critical-text: #de7d80;
+  --warning: #e8b339;
+  --now: #ff5c61;
+  --weekend: rgba(255, 255, 255, 0.012);
+
+  --ev-wash: 26%;
+  --ev-wash-past: 14%;
+  --scrim: rgba(5, 8, 12, 0.62);
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --pop-shadow: 0 18px 48px -12px rgba(0, 0, 0, 0.7), 0 2px 8px rgba(0, 0, 0, 0.45);
+  --glow: rgba(0, 212, 170, 0.14);
+  /* Chart series: a third axis, neither brand nor status — no teal, no green. */
+  --series-1: #7c72ff;
+  --series-2: #16a0d9;
+  --series-3: #a53ead;
+  --series-4: #bc5806;
+  --series-5: #ba8b07;
+  --series-6: #c4446a;
+  --series-7: #6f86a6;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:where(:not([data-theme="dark"])) {
+    color-scheme: light;
+    --page: #f4f6f8;
+    --surface: #ffffff;
+    --surface-2: #eef1f4;
+    --inset: #e9edf1;
+    --border: rgba(15, 20, 25, 0.09);
+    --border-strong: rgba(15, 20, 25, 0.17);
+    --text: #0f1419;
+    --text-2: #3d4853;
+    --muted: #5d6976;
+    --faint: #8e98a3;
+    --grid: #edf0f3;
+    --grid-strong: #dfe4e9;
+    --accent: #00d4aa;
+    --accent-ink: #0f1419;
+    --accent-text: #007a63;
+    --accent-soft: rgba(0, 168, 136, 0.1);
+    --critical: #e5484d;
+    --critical-text: #c02f37;
+    --warning: #b07d0a;
+    --now: #e5484d;
+    --weekend: rgba(15, 20, 25, 0.018);
+    --ev-wash: 17%;
+    --ev-wash-past: 9%;
+    --scrim: rgba(15, 20, 25, 0.38);
+    --card-shadow: 0 1px 2px rgba(15, 20, 25, 0.05), 0 1px 3px rgba(15, 20, 25, 0.04);
+    --pop-shadow: 0 18px 44px -12px rgba(15, 20, 25, 0.22), 0 2px 6px rgba(15, 20, 25, 0.07);
+    --glow: rgba(0, 212, 170, 0.16);
+    --series-1: #5b4fe9;
+    --series-2: #0e86b8;
+    --series-3: #952d9d;
+    --series-4: #b55508;
+    --series-5: #9a7300;
+    --series-6: #ba365f;
+    --series-7: #56708f;
+  }
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --page: #f4f6f8;
+  --surface: #ffffff;
+  --surface-2: #eef1f4;
+  --inset: #e9edf1;
+  --border: rgba(15, 20, 25, 0.09);
+  --border-strong: rgba(15, 20, 25, 0.17);
+  --text: #0f1419;
+  --text-2: #3d4853;
+  --muted: #5d6976;
+  --faint: #8e98a3;
+  --grid: #edf0f3;
+  --grid-strong: #dfe4e9;
+  --accent: #00d4aa;
+  --accent-ink: #0f1419;
+  --accent-text: #007a63;
+  --accent-soft: rgba(0, 168, 136, 0.1);
+  --critical: #e5484d;
+  --critical-text: #c02f37;
+  --warning: #b07d0a;
+  --now: #e5484d;
+  --weekend: rgba(15, 20, 25, 0.018);
+  --ev-wash: 17%;
+  --ev-wash-past: 9%;
+  --scrim: rgba(15, 20, 25, 0.38);
+  --card-shadow: 0 1px 2px rgba(15, 20, 25, 0.05), 0 1px 3px rgba(15, 20, 25, 0.04);
+  --pop-shadow: 0 18px 44px -12px rgba(15, 20, 25, 0.22), 0 2px 6px rgba(15, 20, 25, 0.07);
+  --glow: rgba(0, 212, 170, 0.16);
+  --series-1: #5b4fe9;
+  --series-2: #0e86b8;
+  --series-3: #952d9d;
+  --series-4: #b55508;
+  --series-5: #9a7300;
+  --series-6: #ba365f;
+  --series-7: #56708f;
+}
+
+@theme inline {
+  --color-page: var(--page);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-inset: var(--inset);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-ink: var(--text);
+  --color-ink-2: var(--text-2);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-grid: var(--grid);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-text: var(--accent-text);
+  --color-accent-soft: var(--accent-soft);
+  --color-critical: var(--critical);
+  --color-critical-text: var(--critical-text);
+  --color-warning: var(--warning);
+  --color-now: var(--now);
+  --color-series-1: var(--series-1);
+  --color-series-2: var(--series-2);
+  --color-series-3: var(--series-3);
+  --color-series-4: var(--series-4);
+  --color-series-5: var(--series-5);
+  --color-series-6: var(--series-6);
+  --color-series-7: var(--series-7);
+  --shadow-card: var(--card-shadow);
+  --shadow-pop: var(--pop-shadow);
+  --font-sans: var(--font-grotesk), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+@utility bg-auth {
+  background:
+    radial-gradient(70% 50% at 50% -5%, var(--glow) 0%, transparent 70%),
+    radial-gradient(45% 40% at 95% 105%, var(--accent-soft) 0%, transparent 70%),
+    var(--page);
+}
+
+html,
+body {
+  background: var(--page);
+  color: var(--text);
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@layer base {
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+  }
+  button {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+  /* iOS zooms into inputs under 16px; keep form text at 16px on touch devices. */
+  @media (pointer: coarse) {
+    input,
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
+  }
+  input[type="date"],
+  input[type="time"] {
+    min-width: 0;
+  }
+  ::-webkit-calendar-picker-indicator {
+    filter: var(--picker-filter, none);
+    opacity: 0.7;
+  }
+}
+:root:where([data-theme="dark"]),
+:root:where(:not([data-theme="light"])) {
+  --picker-filter: invert(0.8);
+}
+@media (prefers-color-scheme: light) {
+  :root:where(:not([data-theme="dark"])) {
+    --picker-filter: none;
+  }
+}
+:root[data-theme="light"] {
+  --picker-filter: none;
+}
+
+/* In the base layer so a component's own focus:outline-none still wins. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--accent-text);
+    outline-offset: 2px;
+  }
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+html {
+  scrollbar-color: var(--border-strong) transparent;
+}
+* {
+  scrollbar-width: thin;
+}
+
+/* ── Tints: a category or project colour as a wash, never as text ───── */
+
+.tint {
+  --c: var(--accent);
+  background: color-mix(in srgb, var(--c) var(--ev-wash), var(--surface));
+  color: var(--text);
+}
+.tint-bar {
+  --c: var(--accent);
+  box-shadow: inset 3px 0 0 var(--c);
+}
+.tint-dot {
+  background: var(--c);
+}
+
+/* Bottom sheet on phones, centered dialog from sm up. */
+@keyframes sheet-up {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+.anim-sheet {
+  animation: sheet-up 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.anim-fade {
+  animation: fade-in 0.15s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .anim-sheet,
+  .anim-fade {
+    animation: none;
+  }
+}
+
+.safe-bottom {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+.safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+/* Activity heatmap levels. */
+.heat-1 {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.heat-2 {
+  background: color-mix(in srgb, var(--accent) 32%, transparent);
+}
+.heat-3 {
+  background: color-mix(in srgb, var(--accent) 52%, transparent);
+}
+.heat-4 {
+  background: color-mix(in srgb, var(--accent) 76%, transparent);
+}
