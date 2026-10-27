@@ -14,8 +14,7 @@ export function proxy(request: NextRequest) {
   const hasSession = Boolean(request.cookies.get(SESSION_COOKIE)?.value);
 
   if (pathname.startsWith("/api/")) {
-    // The ICS feed authenticates with the unguessable token in its own path (calendar apps cannot do passkeys).
-    if (pathname.startsWith("/api/auth/") || pathname.startsWith("/api/feed/") || pathname === "/api/health") return NextResponse.next();
+    if (pathname.startsWith("/api/auth/") || pathname === "/api/health") return NextResponse.next();
     if (hasSession) return NextResponse.next(); // verified against the DB by the route
     if (apiTokenEnabled()) {
       if (validBearer(request.headers.get("authorization"))) return NextResponse.next();

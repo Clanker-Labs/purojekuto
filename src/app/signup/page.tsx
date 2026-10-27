@@ -8,7 +8,7 @@ import { countUsers, defaultUser } from "@/server/services/users";
 import { currentUser } from "@/server/session";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Create your calendar" };
+export const metadata = { title: "Create your account" };
 
 export default async function SignupPage({ searchParams }: { searchParams: Promise<{ invite?: string }> }) {
   if (await currentUser()) redirect("/");
@@ -29,7 +29,7 @@ export default async function SignupPage({ searchParams }: { searchParams: Promi
     return (
       <AuthShell
         title="You're invited"
-        subtitle={`${ownerName()} invited you to their purojekuto. Your calendars stay private unless you share them. Sign-in is a passkey — Face ID, Touch ID or your phone.`}
+        subtitle={`${ownerName()} invited you to their purojekuto. Your projects stay private to you. Sign-in is a passkey — Face ID, Touch ID or your phone.`}
       >
         <PasskeySignUp invite={invite.code} suggestedName={invite.name ?? undefined} />
       </AuthShell>
@@ -37,7 +37,7 @@ export default async function SignupPage({ searchParams }: { searchParams: Promi
   }
   if (!signupAllowed(users)) {
     return (
-      <AuthShell title="Sign-ups are closed" subtitle="Ask the owner of this calendar for an invite link.">
+      <AuthShell title="Sign-ups are closed" subtitle="Ask the owner of this purojekuto for an invite link.">
         <Link href="/login" className="block text-center text-sm font-medium text-accent hover:underline">
           Back to sign in
         </Link>
@@ -46,11 +46,11 @@ export default async function SignupPage({ searchParams }: { searchParams: Promi
   }
   return (
     <AuthShell
-      title={first ? "Set up your calendar" : "Create your account"}
+      title={first ? "Set up purojekuto" : "Create your account"}
       subtitle={
         first
           ? "You'll be the owner. Your sign-in is a passkey — Face ID, Touch ID or your phone. No password to remember."
-          : "Your own private calendar on this server, secured with a passkey."
+          : "Your own private projects on this server, secured with a passkey."
       }
       footer={
         first ? null : (

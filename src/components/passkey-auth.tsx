@@ -23,7 +23,7 @@ async function post<T>(url: string, body: unknown): Promise<T> {
 function explain(e: unknown): string {
   const name = (e as { name?: string })?.name;
   if (name === "NotAllowedError" || name === "AbortError") return "Cancelled — no worries, try again when ready.";
-  if (name === "InvalidStateError") return "This device already has a passkey for this calendar. Sign in instead.";
+  if (name === "InvalidStateError") return "This device already has a passkey for purojekuto. Sign in instead.";
   if (name === "SecurityError")
     return "Passkeys need a secure address: open purojekuto via https:// or http://localhost (not a raw IP).";
   return e instanceof Error ? e.message : String(e);

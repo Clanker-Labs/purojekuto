@@ -20,7 +20,7 @@ export async function POST(request: Request) {
   if (!user) {
     const invite = checkInvite(parsed.data.invite);
     if (parsed.data.invite && !invite) return authError(new Error("This invite was already used or has expired. Ask for a new one."), 403);
-    if (!invite && !signupAllowed(countUsers())) return authError(new Error("Sign-ups are closed on this calendar."), 403);
+    if (!invite && !signupAllowed(countUsers())) return authError(new Error("Sign-ups are closed on this purojekuto."), 403);
     if (!parsed.data.name) return authError(new Error("Tell us your name first."));
   }
   try {
