@@ -5,6 +5,7 @@ import { requireUser } from "@/server/session";
 import { getSettings } from "@/server/services/settings";
 import { listCategories, listProjects, recentActivity } from "@/server/services/projects";
 import { analytics, planning } from "@/server/services/analytics";
+import { myTasks } from "@/server/services/items";
 import { aiStatus } from "@/server/ai/providers";
 import { Card, CardTitle, Empty, LinkButton, Stat } from "@/components/bits";
 import { ProjectCard } from "@/components/project-card";
@@ -33,6 +34,7 @@ export default async function HomePage() {
   const doing = active.reduce((n, p) => n + p.tasksDoing, 0);
   const thisMonthMinutes = stats.weekly.slice(-4).reduce((n, w) => n + w.minutes, 0);
   const feed = recentActivity(user.id, { limit: 6 });
+  const mine = myTasks(user.id);
 
   const agenda = [
     ...plan.sessions.filter((s) => s.status === "planned").map((s) => ({ key: s.id, at: s.start, day: DateTime.fromMillis(s.start, { zone: tz }).toISODate()!, kind: "session" as const, title: s.title, project: s.projectTitle, projectId: s.projectId, minutes: (s.end - s.start) / 60000 })),
@@ -87,6 +89,30 @@ export default async function HomePage() {
         </div>
 
         <div className="space-y-6">
+          {mine.length > 0 && (
+            <Card>
+              <CardTitle>Your tasks</CardTitle>
+              <ul className="space-y-2">
+                {mine.slice(0, 8).map((t) => (
+                  <li key={t.id}>
+                    <Link href={`/projects/${t.projectId}?tab=board`} className="-m-1 flex items-start gap-2.5 rounded-lg p-1 hover:bg-surface-2">
+                      <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${t.status === "doing" ? "bg-warning" : "bg-border-strong"}`} aria-label={t.status === "doing" ? "Doing" : "To do"} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm">{t.title}</span>
+                        <span className="block truncate text-xs text-muted">
+                          {t.projectEmoji ? `${t.projectEmoji} ` : ""}
+                          {t.projectTitle}
+                          {t.dueDate ? ` · ${relativeDay(t.dueDate, today)}` : ""}
+                        </span>
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+              {mine.length > 8 && <p className="mt-3 text-xs text-muted">and {mine.length - 8} more</p>}
+            </Card>
+          )}
+
           <Card>
             <CardTitle action={<Link href="/planning" className="text-xs font-medium text-accent-text hover:underline">Planning</Link>}>Next 7 days</CardTitle>
             {agenda.length ? (
@@ -145,6 +171,7 @@ export default async function HomePage() {
                     <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" aria-hidden />
                     <span className="min-w-0 text-ink-2">
                       <span className="text-ink">{a.projectTitle}</span>: {describeActivity(a.kind, a.detail).replace(/^./, (c) => c.toLowerCase())}
+                      {a.by && <span className="text-muted"> by {a.by.split(" ")[0]}</span>}
                       <span className="text-muted"> · {DateTime.fromJSDate(a.at, { zone: tz }).toRelative()}</span>
                     </span>
                   </li>

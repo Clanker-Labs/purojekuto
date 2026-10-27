@@ -1,7 +1,7 @@
 import clsx from "clsx";
 import Link from "next/link";
 import type { CSSProperties } from "react";
-import { FolderKanban, Plus, Search } from "lucide-react";
+import { FolderKanban, Plus, Search, Users } from "lucide-react";
 import { requireUser } from "@/server/session";
 import { getSettings } from "@/server/services/settings";
 import { listCategories, listProjects } from "@/server/services/projects";
@@ -22,10 +22,13 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   const tz = getSettings(user.id).timezone;
   const today = todayIn(tz);
   const status = (sp.s && (["open", "all", ...STATUSES.map((s) => s.id)] as string[]).includes(sp.s) ? sp.s : "open") as ProjectStatus | "open" | "all";
-  const categoryId = sp.c === "none" ? null : sp.c || undefined;
+  const sharedOnly = sp.c === "shared";
+  const categoryId = sp.c === "none" ? null : sharedOnly ? undefined : sp.c || undefined;
   const cats = listCategories(user.id);
-  const projects = listProjects(user.id, { status, categoryId, q: sp.q });
+  const projects = listProjects(user.id, { status, categoryId, q: sp.q, sharedWithMe: sharedOnly });
   const everything = listProjects(user.id, { status: "all" });
+  const sharedOpen = everything.filter((p) => p.userId !== user.id && ["idea", "planned", "active", "paused"].includes(p.status)).length;
+  const anyShared = everything.some((p) => p.userId !== user.id);
   const count = (s: string) => (s === "open" ? everything.filter((p) => ["idea", "planned", "active", "paused"].includes(p.status)).length : s === "all" ? everything.length : everything.filter((p) => p.status === s).length);
   const href = (patch: Search) => {
     const next = { ...sp, ...patch };
@@ -37,8 +40,8 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   return (
     <div>
       <PageHeader
-        title={current ? `${current.emoji} ${current.name}` : "Projects"}
-        subtitle={current ? `${current.open} open · ${current.total} in total` : "Everything you're making happen, by shelf."}
+        title={current ? `${current.emoji} ${current.name}` : sharedOnly ? "Shared with you" : "Projects"}
+        subtitle={current ? `${current.open} open · ${current.total} in total` : sharedOnly ? "Other people's projects you're on." : "Everything you're making happen, by shelf."}
         actions={
           <LinkButton href="/projects/new" variant="primary">
             <Plus size={16} /> New project
@@ -62,6 +65,15 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
             {c.open > 0 && <span className="tabular rounded-md bg-surface/70 px-1.5 text-[11px] font-semibold text-ink-2">{c.open}</span>}
           </Link>
         ))}
+        {anyShared && (
+          <Link
+            href={href({ c: "shared" })}
+            className={clsx("flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-sm", sharedOnly ? "border-accent bg-accent-soft font-semibold text-accent-text" : "border-border bg-surface text-ink-2 hover:text-ink")}
+          >
+            <Users size={14} aria-hidden /> Shared with you
+            {sharedOpen > 0 && <span className="tabular rounded-md bg-surface-2 px-1.5 text-[11px] font-semibold text-ink-2">{sharedOpen}</span>}
+          </Link>
+        )}
         <Link href={href({ c: "none" })} className={clsx("shrink-0 rounded-xl border px-3 py-2 text-sm", sp.c === "none" ? "border-accent text-accent-text" : "border-dashed border-border-strong text-muted hover:text-ink")}>
           Uncategorized
         </Link>
@@ -88,7 +100,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
       </div>
 
       {projects.length ? (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 min-[1900px]:grid-cols-5">
           {projects.map((p) => (
             <ProjectCard key={p.id} p={p} today={today} tz={tz} />
           ))}

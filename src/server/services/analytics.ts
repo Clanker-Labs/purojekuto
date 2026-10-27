@@ -1,4 +1,4 @@
-import { and, eq, gte } from "drizzle-orm";
+import { and, eq, gte, inArray } from "drizzle-orm";
 import { DateTime } from "luxon";
 import { db } from "@/server/db/client";
 import { activity, milestones, projects, tasks, workSessions } from "@/server/db/schema";
@@ -7,7 +7,12 @@ import { DAY, todayIn } from "@/lib/time";
 import { listCategories, listProjects } from "./projects";
 import { getSettings } from "./settings";
 
-/** Numbers for the Analytics page and the `get_analytics` tool. Everything is per user. */
+/**
+ * Numbers for the Analytics page and the `get_analytics` tool. Projects are
+ * the ones this person can see (shared ones included); the weekly series and
+ * heatmap count their own activity, so a shared project doesn't inflate
+ * everyone's week.
+ */
 
 export interface WeekPoint {
   week: string; // Monday 'YYYY-MM-DD'
@@ -124,7 +129,7 @@ export function planning(uid: string, fromDate: string, toDate: string) {
     .select({ m: milestones, title: projects.title, emoji: projects.emoji })
     .from(milestones)
     .innerJoin(projects, eq(projects.id, milestones.projectId))
-    .where(eq(milestones.userId, uid))
+    .where(inArray(milestones.projectId, [...ids]))
     .all()
     .filter((r) => r.m.dueDate && r.m.dueDate >= fromDate && r.m.dueDate <= toDate && ids.has(r.m.projectId))
     .map((r) => ({ ...r.m, projectTitle: r.title, projectEmoji: r.emoji }));
@@ -132,9 +137,10 @@ export function planning(uid: string, fromDate: string, toDate: string) {
     .select({ t: tasks, title: projects.title })
     .from(tasks)
     .innerJoin(projects, eq(projects.id, tasks.projectId))
-    .where(eq(tasks.userId, uid))
+    .where(inArray(tasks.projectId, [...ids]))
     .all()
-    .filter((r) => r.t.dueDate && r.t.status !== "done" && r.t.dueDate <= toDate && ids.has(r.t.projectId))
+    // Yours, or nobody's yet; tasks given to someone else are on their plate.
+    .filter((r) => r.t.dueDate && r.t.status !== "done" && r.t.dueDate <= toDate && (r.t.assigneeId == null || r.t.assigneeId === uid))
     .map((r) => ({ ...r.t, projectTitle: r.title }));
   const unscheduled = open.filter((p) => p.status === "active" && !p.nextSession);
   return { timezone: tz, projects: open, sessions, milestones: ms, dueTasks, unscheduled };

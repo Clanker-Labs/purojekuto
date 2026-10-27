@@ -15,10 +15,11 @@ import { getSettings } from "./settings";
 export type SpecVersion = Omit<SpecRow, "content"> & { content: Spec };
 
 export function latestSpec(uid: string, projectId: string): SpecVersion | null {
+  getProject(uid, projectId);
   const row = db()
     .select()
     .from(specs)
-    .where(and(eq(specs.userId, uid), eq(specs.projectId, projectId)))
+    .where(eq(specs.projectId, projectId))
     .orderBy(desc(specs.version))
     .limit(1)
     .get();
@@ -26,17 +27,19 @@ export function latestSpec(uid: string, projectId: string): SpecVersion | null {
 }
 
 export function listSpecVersions(uid: string, projectId: string) {
+  getProject(uid, projectId);
   return db()
     .select({ id: specs.id, version: specs.version, provider: specs.provider, model: specs.model, appliedAt: specs.appliedAt, createdAt: specs.createdAt })
     .from(specs)
-    .where(and(eq(specs.userId, uid), eq(specs.projectId, projectId)))
+    .where(eq(specs.projectId, projectId))
     .orderBy(desc(specs.version))
     .all();
 }
 
 export function getSpec(uid: string, id: string): SpecVersion {
-  const row = db().select().from(specs).where(and(eq(specs.id, id), eq(specs.userId, uid))).get();
+  const row = db().select().from(specs).where(eq(specs.id, id)).get();
   if (!row) throw new Error(`No spec ${id}`);
+  getProject(uid, row.projectId);
   return row as SpecVersion;
 }
 
@@ -108,14 +111,24 @@ export function applySpec(uid: string, specId: string): { milestones: number; ta
 // ── Background jobs ──────────────────────────────────────────────────────
 
 export function getJob(uid: string, id: string): AiJob {
-  const j = db().select().from(aiJobs).where(and(eq(aiJobs.id, id), eq(aiJobs.userId, uid))).get();
-  if (!j) throw new Error(`No job ${id}`);
+  const j = db().select().from(aiJobs).where(eq(aiJobs.id, id)).get();
+  if (!j || (j.projectId ? !canSee(uid, j.projectId) : j.userId !== uid)) throw new Error(`No job ${id}`);
   return j;
 }
 
 /** The newest job for a project (to show "writing…" or the last failure). */
 export function latestJob(uid: string, projectId: string): AiJob | null {
-  return db().select().from(aiJobs).where(and(eq(aiJobs.userId, uid), eq(aiJobs.projectId, projectId))).orderBy(desc(aiJobs.createdAt)).limit(1).get() ?? null;
+  getProject(uid, projectId);
+  return db().select().from(aiJobs).where(eq(aiJobs.projectId, projectId)).orderBy(desc(aiJobs.createdAt)).limit(1).get() ?? null;
+}
+
+function canSee(uid: string, projectId: string) {
+  try {
+    getProject(uid, projectId);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Queue a spec for a project. One at a time per project: a pending one is returned instead of queuing another. */

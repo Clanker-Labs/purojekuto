@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import clsx from "clsx";
-import { ArrowRight, Check, Flag, GripVertical, Plus, Trash2, Undo2 } from "lucide-react";
+import { ArrowRight, Check, Flag, GripVertical, Plus, Trash2, Undo2, UserRound } from "lucide-react";
 import { addTaskAction, deleteTaskAction, moveTaskAction, updateTaskAction } from "@/app/actions";
 import { TASK_COLUMNS } from "@/lib/projects";
 import { relativeDay } from "@/lib/format";
 import type { TaskStatus } from "@/server/db/schema";
+import { Avatar } from "../bits";
 import { Button, Input, Select } from "../ui";
 
 interface T {
@@ -15,17 +16,40 @@ interface T {
   notes: string;
   status: TaskStatus;
   milestoneId: string | null;
+  assigneeId: string | null;
   dueDate: string | null;
+}
+
+interface Person {
+  id: string;
+  name: string;
 }
 
 /**
  * Three columns. Desktop: drag cards between and within columns. Touch: the
  * arrow on a card moves it to the next column. State is optimistic; the
- * server's answer replaces it on refresh.
+ * server's answer replaces it on refresh. On a shared project each card can
+ * be given to someone, and the board filters to one person's work.
  */
-export function Board({ projectId, tasks: initial, milestones, today }: { projectId: string; tasks: T[]; milestones: { id: string; title: string }[]; today: string }) {
+export function Board({
+  projectId,
+  tasks: initial,
+  milestones,
+  people,
+  me,
+  today,
+}: {
+  projectId: string;
+  tasks: T[];
+  milestones: { id: string; title: string }[];
+  people: Person[];
+  me: string;
+  today: string;
+}) {
   const [tasks, setTasks] = useState(initial);
   const [filter, setFilter] = useState("");
+  const [who, setWho] = useState("");
+  const shared = people.length > 1;
   const [drag, setDrag] = useState<string | null>(null);
   const [over, setOver] = useState<{ col: TaskStatus; before: string | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -33,7 +57,8 @@ export function Board({ projectId, tasks: initial, milestones, today }: { projec
   useEffect(() => setTasks(initial), [initial]);
 
   const msName = useMemo(() => new Map(milestones.map((m) => [m.id, m.title])), [milestones]);
-  const visible = filter ? tasks.filter((t) => (filter === "none" ? !t.milestoneId : t.milestoneId === filter)) : tasks;
+  const byMilestone = filter ? tasks.filter((t) => (filter === "none" ? !t.milestoneId : t.milestoneId === filter)) : tasks;
+  const visible = who ? byMilestone.filter((t) => (who === "none" ? !t.assigneeId : t.assigneeId === who)) : byMilestone;
   const col = (s: TaskStatus) => visible.filter((t) => t.status === s);
 
   const run = (fn: () => Promise<{ ok: boolean; error?: string }>) =>
@@ -58,20 +83,49 @@ export function Board({ projectId, tasks: initial, milestones, today }: { projec
 
   const next: Record<TaskStatus, TaskStatus> = { todo: "doing", doing: "done", done: "todo" };
 
+  const assign = (id: string, assigneeId: string | null) => {
+    setTasks((x) => x.map((t) => (t.id === id ? { ...t, assigneeId } : t)));
+    run(() => updateTaskAction(projectId, id, { assigneeId }));
+  };
+
   return (
     <div>
-      {milestones.length > 0 && (
-        <div className="mb-4 flex items-center gap-2">
-          <Flag size={14} className="text-muted" />
-          <Select value={filter} onChange={(e) => setFilter(e.target.value)} className="w-64" aria-label="Filter by milestone">
-            <option value="">All milestones</option>
-            {milestones.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.title}
-              </option>
-            ))}
-            <option value="none">No milestone</option>
-          </Select>
+      {(milestones.length > 0 || shared) && (
+        <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+          {milestones.length > 0 && (
+            <label className="flex items-center gap-2">
+              <Flag size={14} className="text-muted" />
+              <Select value={filter} onChange={(e) => setFilter(e.target.value)} className="w-60" aria-label="Filter by milestone">
+                <option value="">All milestones</option>
+                {milestones.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.title}
+                  </option>
+                ))}
+                <option value="none">No milestone</option>
+              </Select>
+            </label>
+          )}
+          {shared && (
+            <div className="flex items-center gap-1" role="group" aria-label="Filter by person">
+              <FilterChip active={!who} onClick={() => setWho("")}>
+                Everyone
+              </FilterChip>
+              <FilterChip active={who === me} onClick={() => setWho(me)}>
+                Mine
+              </FilterChip>
+              {people
+                .filter((p) => p.id !== me)
+                .map((p) => (
+                  <FilterChip key={p.id} active={who === p.id} onClick={() => setWho(p.id)}>
+                    {p.name.split(" ")[0]}
+                  </FilterChip>
+                ))}
+              <FilterChip active={who === "none"} onClick={() => setWho("none")}>
+                Unassigned
+              </FilterChip>
+            </div>
+          )}
         </div>
       )}
       {error && <p className="mb-3 text-sm text-critical-text">{error}</p>}
@@ -132,6 +186,8 @@ export function Board({ projectId, tasks: initial, milestones, today }: { projec
                     <TaskCard
                       t={t}
                       milestone={t.milestoneId ? msName.get(t.milestoneId) : undefined}
+                      people={shared ? people : null}
+                      onAssign={(a) => assign(t.id, a)}
                       today={today}
                       onAdvance={() => move(t.id, next[t.status], null)}
                       onRename={(title) => run(() => updateTaskAction(projectId, t.id, { title }))}
@@ -144,7 +200,7 @@ export function Board({ projectId, tasks: initial, milestones, today }: { projec
                 ))}
                 {drag && over?.col === c.id && over.before === null && <li className="h-0.5 rounded bg-accent" aria-hidden />}
               </ul>
-              <AddTask projectId={projectId} status={c.id} milestoneId={filter && filter !== "none" ? filter : null} onError={setError} />
+              <AddTask projectId={projectId} status={c.id} milestoneId={filter && filter !== "none" ? filter : null} assigneeId={who && who !== "none" ? who : null} onError={setError} />
             </section>
           );
         })}
@@ -153,7 +209,68 @@ export function Board({ projectId, tasks: initial, milestones, today }: { projec
   );
 }
 
-function TaskCard({ t, milestone, today, onAdvance, onRename, onDelete }: { t: T; milestone?: string; today: string; onAdvance: () => void; onRename: (title: string) => void; onDelete: () => void }) {
+function FilterChip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={clsx("rounded-full border px-2.5 py-1 text-xs font-medium transition", active ? "border-accent bg-accent-soft text-accent-text" : "border-border text-ink-2 hover:text-ink")}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** The assignee as an avatar; a transparent native select on top does the picking (works with touch and keyboards). */
+function AssigneePicker({ value, people, onChange }: { value: string | null; people: Person[]; onChange: (id: string | null) => void }) {
+  const person = people.find((p) => p.id === value);
+  return (
+    <span className="relative inline-flex items-center">
+      {person ? (
+        <Avatar person={person} size={20} />
+      ) : (
+        <span className="grid h-5 w-5 place-items-center rounded-full border border-dashed border-border-strong text-faint" aria-hidden>
+          <UserRound size={11} />
+        </span>
+      )}
+      <select
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value || null)}
+        className="absolute inset-0 cursor-pointer opacity-0"
+        aria-label={person ? `Assigned to ${person.name}` : "Assign"}
+        title={person ? person.name : "Assign"}
+      >
+        <option value="">Anyone</option>
+        {people.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
+          </option>
+        ))}
+      </select>
+    </span>
+  );
+}
+
+function TaskCard({
+  t,
+  milestone,
+  people,
+  onAssign,
+  today,
+  onAdvance,
+  onRename,
+  onDelete,
+}: {
+  t: T;
+  milestone?: string;
+  people: Person[] | null;
+  onAssign: (id: string | null) => void;
+  today: string;
+  onAdvance: () => void;
+  onRename: (title: string) => void;
+  onDelete: () => void;
+}) {
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(t.title);
   const overdue = t.dueDate && t.dueDate < today && t.status !== "done";
@@ -176,11 +293,14 @@ function TaskCard({ t, milestone, today, onAdvance, onRename, onDelete }: { t: T
             {t.title}
           </p>
         )}
-        {(milestone || t.dueDate) && (
-          <p className="mt-1.5 flex flex-wrap gap-x-2 text-[11px] text-muted">
-            {milestone && <span className="truncate">⚑ {milestone}</span>}
-            {t.dueDate && <span className={overdue ? "font-medium text-critical-text" : ""}>{relativeDay(t.dueDate, today)}</span>}
-          </p>
+        {(milestone || t.dueDate || people) && (
+          <div className="mt-1.5 flex items-center gap-2">
+            {people && <AssigneePicker value={t.assigneeId} people={people} onChange={onAssign} />}
+            <p className="flex min-w-0 flex-wrap gap-x-2 text-[11px] text-muted">
+              {milestone && <span className="truncate">⚑ {milestone}</span>}
+              {t.dueDate && <span className={overdue ? "font-medium text-critical-text" : ""}>{relativeDay(t.dueDate, today)}</span>}
+            </p>
+          </div>
         )}
       </div>
       <div className="flex shrink-0 flex-col items-center gap-1">
@@ -204,7 +324,19 @@ function TaskCard({ t, milestone, today, onAdvance, onRename, onDelete }: { t: T
   );
 }
 
-function AddTask({ projectId, status, milestoneId, onError }: { projectId: string; status: TaskStatus; milestoneId: string | null; onError: (e: string | null) => void }) {
+function AddTask({
+  projectId,
+  status,
+  milestoneId,
+  assigneeId,
+  onError,
+}: {
+  projectId: string;
+  status: TaskStatus;
+  milestoneId: string | null;
+  assigneeId: string | null;
+  onError: (e: string | null) => void;
+}) {
   const [title, setTitle] = useState("");
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
@@ -221,7 +353,7 @@ function AddTask({ projectId, status, milestoneId, onError }: { projectId: strin
         e.preventDefault();
         if (!title.trim()) return;
         start(async () => {
-          const r = await addTaskAction(projectId, { title, status, milestoneId });
+          const r = await addTaskAction(projectId, { title, status, milestoneId, assigneeId });
           onError(r.ok ? null : r.error);
           if (r.ok) setTitle("");
         });
